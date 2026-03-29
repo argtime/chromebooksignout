@@ -1,0 +1,7 @@
+# CE Toolchain build artifacts
+bin/
+obj/
+
+# Operating system artifacts
+.DS_Store
+Thumbs.db

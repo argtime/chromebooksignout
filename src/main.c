@@ -6,13 +6,12 @@
  * composite USB HID device (keyboard + absolute mouse) to sign out of
  * a Chromebook automatically.
  *
- * Behavior:
+ * Behavior (runs automatically on launch):
  *  1. Connect the TI 84+ CE to the Chromebook via USB cable.
- *  2. Press [ENTER] on the calculator to begin.
- *  3. The calculator sends the Alt+Shift+S key combination to open the
- *     ChromeOS Quick Settings panel.
- *  4. After a short delay (for the panel to appear), the calculator moves
- *     the mouse cursor to the "Sign out" button and clicks it.
+ *  2. On startup the calculator sends Alt+Shift+S to open the Quick
+ *     Settings panel.
+ *  3. Wait 500 ms for the panel animation.
+ *  4. Move the mouse to the "Sign out" button and click it, then exit.
  *
  * Target screen: 1366x768 Chromebook display
  * Sign-out button coordinates (from reference image): (1299, 352)
@@ -370,19 +369,18 @@ static const usb_standard_descriptors_t s_usb_descs = {
  * Application State Machine
  * -------------------------------------------------------------------------- */
 typedef enum {
-    STATE_INIT,           /**< Waiting for host to configure the device. */
-    STATE_WAIT_USER,      /**< Connected; waiting for user to press ENTER.*/
-    STATE_SEND_SHORTCUT,  /**< Sending Alt+Shift+S.                       */
-    STATE_RELEASE_KEYS,   /**< Releasing all keys.                        */
-    STATE_WAIT_MENU,      /**< Waiting 600 ms for the panel to open.      */
-    STATE_MOVE_MOUSE,     /**< Moving cursor to sign-out button.          */
-    STATE_CLICK,          /**< Pressing the left mouse button.            */
-    STATE_RELEASE_CLICK,  /**< Releasing the mouse button.                */
-    STATE_DONE            /**< Sequence complete.                         */
+    STATE_WAIT_CONFIG,    /**< Waiting for host to configure the device. */
+    STATE_SEND_SHORTCUT,  /**< Sending Alt+Shift+S.                      */
+    STATE_RELEASE_KEYS,   /**< Releasing all keys.                       */
+    STATE_WAIT_PANEL,     /**< Waiting 500 ms for the panel to open.     */
+    STATE_MOVE_MOUSE,     /**< Moving cursor to sign-out button.         */
+    STATE_CLICK,          /**< Pressing the left mouse button.           */
+    STATE_RELEASE_CLICK,  /**< Releasing the mouse button.               */
+    STATE_DONE            /**< Sequence complete.                        */
 } app_state_t;
 
 /* Global application state */
-static volatile app_state_t g_state      = STATE_INIT;
+static volatile app_state_t g_state      = STATE_WAIT_CONFIG;
 static volatile bool        g_configured = false;
 
 /* Interrupt endpoint handles, populated on USB_HOST_CONFIGURE_EVENT */
@@ -530,7 +528,7 @@ static usb_error_t usb_callback(usb_event_t event, void *event_data,
         g_ep_kbd     = NULL;
         g_ep_mouse   = NULL;
         if (g_state != STATE_DONE)
-            g_state = STATE_INIT;
+            g_state = STATE_WAIT_CONFIG;
         break;
 
     case USB_HOST_CONFIGURE_EVENT:
@@ -541,8 +539,8 @@ static usb_error_t usb_callback(usb_event_t event, void *event_data,
         g_ep_kbd   = usb_GetDeviceEndpoint(usb_RootHub(), EP_KBD_ADDR);
         g_ep_mouse = usb_GetDeviceEndpoint(usb_RootHub(), EP_MOUSE_ADDR);
         g_configured = (g_ep_kbd != NULL) && (g_ep_mouse != NULL);
-        if (g_configured && g_state == STATE_INIT)
-            g_state = STATE_WAIT_USER;
+        if (g_configured && g_state == STATE_WAIT_CONFIG)
+            g_state = STATE_SEND_SHORTCUT;
         break;
 
     case USB_DEFAULT_SETUP_EVENT:
@@ -654,18 +652,7 @@ static void delay_ms(uint16_t ms)
 int main(void)
 {
     gfx_Begin();
-    show_status("Connect USB cable", "Press ENTER to start");
-
-    /* Wait for the user to press ENTER before starting USB. */
-    kb_Scan();
-    while (!kb_IsDown(kb_KeyEnter)) {
-        delay_ms(20);
-        kb_Scan();
-        if (kb_IsDown(kb_KeyClear))
-            goto cleanup;
-    }
-
-    show_status("Initialising USB...", NULL);
+    show_status("Initialising USB...", "Auto sequence will run");
 
     /*
      * Start the USB driver in device mode.  Passing &s_usb_descs tells
@@ -696,19 +683,14 @@ int main(void)
 
         switch (g_state) {
 
-        case STATE_INIT:
+        case STATE_WAIT_CONFIG:
             /* Waiting for host to configure the device (USB_HOST_CONFIGURE_EVENT). */
-            show_status("Waiting for USB...", "Connect to Chromebook");
-            delay_ms(200);
-            break;
-
-        case STATE_WAIT_USER:
-            /* Display "ready" message and wait for ENTER. */
-            show_status("USB connected!", "Press ENTER to sign out");
-            delay_ms(50);
-            if (kb_IsDown(kb_KeyEnter)) {
-                show_status("Sending Alt+Shift+S", NULL);
-                delay_ms(200); /* Debounce. */
+            if (!g_configured) {
+                show_status("Waiting for USB...", "Connect to Chromebook");
+                delay_ms(100);
+            } else {
+                show_status("USB configured", "Sending Alt+Shift+S");
+                delay_ms(50);
                 g_state = STATE_SEND_SHORTCUT;
             }
             break;
@@ -727,17 +709,17 @@ int main(void)
 
         case STATE_RELEASE_KEYS:
             if (send_kbd_report(HID_MOD_NONE, 0x00)) {
-                show_status("Waiting for panel...", NULL);
-                g_state = STATE_WAIT_MENU;
+                show_status("Waiting 500ms...", "Opening Quick Settings");
+                g_state = STATE_WAIT_PANEL;
             }
             break;
 
-        case STATE_WAIT_MENU:
+        case STATE_WAIT_PANEL:
             /*
-             * Wait 600 ms for the ChromeOS Quick Settings panel to
+             * Wait 500 ms for the ChromeOS Quick Settings panel to
              * animate open before moving the mouse.
              */
-            delay_ms(600);
+            delay_ms(500);
             show_status("Moving mouse...", NULL);
             g_state = STATE_MOVE_MOUSE;
             break;
@@ -769,22 +751,14 @@ int main(void)
         case STATE_RELEASE_CLICK:
             /* Release left button. */
             if (send_mouse_report(0x00, SIGNOUT_HID_X, SIGNOUT_HID_Y)) {
-                show_status("Done! Signed out.", "Press CLEAR to exit");
+                show_status("Sequence sent", "Exiting...");
+                delay_ms(150);
                 g_state = STATE_DONE;
             }
             break;
 
         case STATE_DONE:
             break;
-        }
-    }
-
-    /* Hold the done screen until CLEAR. */
-    if (g_state == STATE_DONE) {
-        kb_Scan();
-        while (!kb_IsDown(kb_KeyClear)) {
-            delay_ms(20);
-            kb_Scan();
         }
     }
 

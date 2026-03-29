@@ -11,15 +11,14 @@ sign out of a Chromebook.
    two interfaces:
    - **Interface 0** — HID Keyboard (boot protocol)
    - **Interface 1** — HID Absolute Mouse
-3. On user request (press **\[ENTER\]** on the calculator), the program:
-   - Sends the **Alt + Shift + S** keyboard combination, which opens the
-     ChromeOS Quick Settings panel.
-   - Waits ~600 ms for the panel animation to complete.
+3. After USB configuration, the program automatically:
+   - Sends **Alt + Shift + S** simultaneously to open the Quick Settings panel.
+   - Waits **500 ms** for the panel animation to complete.
    - Moves the absolute mouse cursor to the **Sign out** button at
      screen coordinates **(1299, 352)** — identified from the reference
      screenshot (`image.png`, 1366 × 768 px).
-   - Clicks the left mouse button to trigger the sign-out action.
-4. Press **\[CLEAR\]** on the calculator at any time to abort.
+   - Clicks the left mouse button to trigger the sign-out action, then exits.
+4. Press **\[CLEAR\]** on the calculator at any time before completion to abort.
 
 ## Reference Image
 
@@ -78,10 +77,11 @@ TI 84+ CE.  The program appears under **[PRGM]** → **CBSGNOUT**.
    (USB-A host on the Chromebook side, mini-USB on the calculator side).
 2. Unlock the Chromebook if it is on the lock screen.
 3. Run `CBSGNOUT` on the calculator (`[PRGM]` → select → `[ENTER]`).
-4. Press **\[ENTER\]** when prompted ("Press ENTER to start").
-   - ChromeOS will recognise the new HID device within a second or two.
-5. Once "USB connected!" is displayed, press **\[ENTER\]** again to
-   execute the sign-out sequence.
+4. Once ChromeOS configures the USB device, the calculator will immediately:
+   - Send **Alt + Shift + S**, wait **500 ms**, move to the preset location,
+     click **Sign out**, and exit.
+5. Press **\[CLEAR\]** to abort while waiting for USB configuration or during
+   the sequence if needed.
 
 ## USB Descriptor Details
 

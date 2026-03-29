@@ -5,3 +5,7 @@ obj/
 # Operating system artifacts
 .DS_Store
 Thumbs.db
+
+# Local toolchain install
+.cedev/
+.cedev.bak.*/

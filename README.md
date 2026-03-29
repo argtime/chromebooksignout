@@ -50,6 +50,18 @@ These coordinates are mapped to the HID absolute mouse logical range
 make
 ```
 
+
+### Build without a global CEdev install
+
+If `make` fails with `cedev-config: No such file or directory`, you can install
+CEdev locally in this repo and build immediately:
+
+```sh
+scripts/bootstrap_cedev.sh
+CEDEV="$PWD/.cedev" PATH="$PWD/.cedev/bin:$PATH" make
+```
+
+
 The output is `bin/CBSGNOUT.8xp`.
 
 A prebuilt `CBSGNOUT.8xp` (built with CEdev v14.2) is in the repository

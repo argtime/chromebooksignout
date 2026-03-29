@@ -13,7 +13,7 @@
 # =============================================================================
 
 # Program name (up to 8 chars, uppercase, no spaces)
-NAME        = CBSIGNOUT
+NAME        = CBSGNOUT
 
 # Human-readable description (shown in TI Connect CE)
 DESCRIPTION = Chromebook Sign-Out HID Device

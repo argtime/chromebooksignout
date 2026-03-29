@@ -93,6 +93,10 @@
 #define EP_KBD_ADDR   0x81U   /* EP1 IN: keyboard  */
 #define EP_MOUSE_ADDR 0x82U   /* EP2 IN: mouse     */
 
+/* Display colors (palette indices) */
+#define COLOR_BG   0x00U
+#define COLOR_TEXT 0xFFU
+
 /* --------------------------------------------------------------------------
  * HID report structs
  * -------------------------------------------------------------------------- */
@@ -366,22 +370,15 @@ static const usb_standard_descriptors_t s_usb_descs = {
 };
 
 /* --------------------------------------------------------------------------
- * Application State Machine
+ * Timing constants (milliseconds)
  * -------------------------------------------------------------------------- */
-typedef enum {
-    STATE_WAIT_CONFIG,    /**< Waiting for host to configure the device. */
-    STATE_SEND_SHORTCUT,  /**< Sending Alt+Shift+S.                      */
-    STATE_RELEASE_KEYS,   /**< Releasing all keys.                       */
-    STATE_WAIT_PANEL,     /**< Waiting 500 ms for the panel to open.     */
-    STATE_MOVE_MOUSE,     /**< Moving cursor to sign-out button.         */
-    STATE_CLICK,          /**< Pressing the left mouse button.           */
-    STATE_RELEASE_CLICK,  /**< Releasing the mouse button.               */
-    STATE_DONE            /**< Sequence complete.                        */
-} app_state_t;
+#define CONFIG_WAIT_MS      12000U  /* Max wait for USB config before failing */
+#define PANEL_WAIT_MS         500U  /* Delay after Alt+Shift+S before moving  */
+#define REPORT_SPACING_MS      80U  /* Settling delay between HID reports     */
 
-/* Global application state */
-static volatile app_state_t g_state      = STATE_WAIT_CONFIG;
-static volatile bool        g_configured = false;
+/* Global USB state */
+static volatile bool g_configured = false;
+static volatile bool g_aborted    = false;
 
 /* Interrupt endpoint handles, populated on USB_HOST_CONFIGURE_EVENT */
 static usb_endpoint_t g_ep_kbd   = NULL;
@@ -527,8 +524,6 @@ static usb_error_t usb_callback(usb_event_t event, void *event_data,
         g_configured = false;
         g_ep_kbd     = NULL;
         g_ep_mouse   = NULL;
-        if (g_state != STATE_DONE)
-            g_state = STATE_WAIT_CONFIG;
         break;
 
     case USB_HOST_CONFIGURE_EVENT:
@@ -539,8 +534,6 @@ static usb_error_t usb_callback(usb_event_t event, void *event_data,
         g_ep_kbd   = usb_GetDeviceEndpoint(usb_RootHub(), EP_KBD_ADDR);
         g_ep_mouse = usb_GetDeviceEndpoint(usb_RootHub(), EP_MOUSE_ADDR);
         g_configured = (g_ep_kbd != NULL) && (g_ep_mouse != NULL);
-        if (g_configured && g_state == STATE_WAIT_CONFIG)
-            g_state = STATE_SEND_SHORTCUT;
         break;
 
     case USB_DEFAULT_SETUP_EVENT:
@@ -611,9 +604,9 @@ static bool send_mouse_report(uint8_t buttons, uint16_t x, uint16_t y)
 
 static void show_status(const char *line1, const char *line2)
 {
-    gfx_FillScreen(gfx_black);
-    gfx_SetTextFGColor(gfx_white);
-    gfx_SetTextBGColor(gfx_black);
+    gfx_FillScreen(COLOR_BG);
+    gfx_SetTextFGColor(COLOR_TEXT);
+    gfx_SetTextBGColor(COLOR_BG);
     gfx_SetTextScale(1, 1);
 
     gfx_PrintStringXY("CB Sign-Out HID", 10, 5);
@@ -636,14 +629,93 @@ static void show_status(const char *line1, const char *line2)
  * For more accurate timing use the CE toolchain hardware timer:
  *   timer_Set / timer_Wait from <sys/timers.h> (32 kHz crystal).
  * -------------------------------------------------------------------------- */
-static void delay_ms(uint16_t ms)
+static bool delay_ms(uint16_t ms)
 {
     while (ms--) {
         volatile uint16_t i = 2400; /* ~1 ms inner loop at 48 MHz */
-        while (i--)
-            ;
+        while (i--) {
+            /* tight loop */
+        }
         usb_HandleEvents();
+        kb_Scan();
+        if (kb_IsDown(kb_KeyClear)) {
+            g_aborted = true;
+            return false;
+        }
     }
+
+    return true;
+}
+
+/* --------------------------------------------------------------------------
+ * Sequence helpers
+ * -------------------------------------------------------------------------- */
+
+static bool wait_for_configuration(uint16_t timeout_ms)
+{
+    uint16_t waited = 0;
+
+    while (!g_configured) {
+        if (!delay_ms(50))
+            return false;
+        waited += 50;
+        if (timeout_ms && waited >= timeout_ms)
+            return false;
+    }
+
+    return true;
+}
+
+static bool send_alt_shift_s(void)
+{
+    if (!send_kbd_report(HID_MOD_LALT | HID_MOD_LSHIFT, HID_KEY_S))
+        return false;
+    if (!delay_ms(REPORT_SPACING_MS))
+        return false;
+    return send_kbd_report(HID_MOD_NONE, 0x00);
+}
+
+static bool move_cursor_to_target(void)
+{
+    if (!send_mouse_report(0x00, SIGNOUT_HID_X, SIGNOUT_HID_Y))
+        return false;
+    return delay_ms(REPORT_SPACING_MS);
+}
+
+static bool click_sign_out(void)
+{
+    if (!send_mouse_report(HID_BTN_LEFT, SIGNOUT_HID_X, SIGNOUT_HID_Y))
+        return false;
+    if (!delay_ms(REPORT_SPACING_MS))
+        return false;
+    return send_mouse_report(0x00, SIGNOUT_HID_X, SIGNOUT_HID_Y);
+}
+
+static bool run_sequence(void)
+{
+    show_status("Waiting for USB...", "Connect to Chromebook");
+    if (!wait_for_configuration(CONFIG_WAIT_MS)) {
+        return false;
+    }
+
+    show_status("USB configured", "Sending Alt+Shift+S");
+    if (!send_alt_shift_s())
+        return false;
+
+    show_status("Waiting 500ms...", "Opening Quick Settings");
+    if (!delay_ms(PANEL_WAIT_MS))
+        return false;
+
+    show_status("Moving mouse...", NULL);
+    if (!move_cursor_to_target())
+        return false;
+
+    show_status("Clicking Sign out", NULL);
+    if (!click_sign_out())
+        return false;
+
+    show_status("Sequence sent", "Exiting...");
+    return delay_ms(250);
 }
 
 /* --------------------------------------------------------------------------
@@ -668,98 +740,16 @@ int main(void)
         goto cleanup;
     }
 
-    /* Main event loop */
-    while (g_state != STATE_DONE) {
-
-        usb_HandleEvents();
-        kb_Scan();
-
-        /* User can abort at any time with [CLEAR]. */
-        if (kb_IsDown(kb_KeyClear)) {
+    g_aborted = false;
+    if (!run_sequence()) {
+        if (g_aborted) {
             show_status("Aborted by user", NULL);
-            delay_ms(1500);
-            break;
+        } else if (!g_configured) {
+            show_status("USB not configured", "Check cable & retry");
+        } else {
+            show_status("USB send failed", "Reconnect & retry");
         }
-
-        switch (g_state) {
-
-        case STATE_WAIT_CONFIG:
-            /* Waiting for host to configure the device (USB_HOST_CONFIGURE_EVENT). */
-            if (!g_configured) {
-                show_status("Waiting for USB...", "Connect to Chromebook");
-                delay_ms(100);
-            } else {
-                show_status("USB configured", "Sending Alt+Shift+S");
-                delay_ms(50);
-                g_state = STATE_SEND_SHORTCUT;
-            }
-            break;
-
-        case STATE_SEND_SHORTCUT:
-            /*
-             * Send Alt + Shift + S.
-             * Modifier: Left Alt (0x04) | Left Shift (0x02) = 0x06
-             * Key code: S = 0x16
-             */
-            if (send_kbd_report(HID_MOD_LALT | HID_MOD_LSHIFT, HID_KEY_S)) {
-                delay_ms(100);
-                g_state = STATE_RELEASE_KEYS;
-            }
-            break;
-
-        case STATE_RELEASE_KEYS:
-            if (send_kbd_report(HID_MOD_NONE, 0x00)) {
-                show_status("Waiting 500ms...", "Opening Quick Settings");
-                g_state = STATE_WAIT_PANEL;
-            }
-            break;
-
-        case STATE_WAIT_PANEL:
-            /*
-             * Wait 500 ms for the ChromeOS Quick Settings panel to
-             * animate open before moving the mouse.
-             */
-            delay_ms(500);
-            show_status("Moving mouse...", NULL);
-            g_state = STATE_MOVE_MOUSE;
-            break;
-
-        case STATE_MOVE_MOUSE:
-            /*
-             * Move the cursor to the "Sign out" button.
-             * From reference screenshot (image.png): pixel (1299, 352)
-             * on a 1366x768 display.
-             * HID absolute range (0-32767):
-             *   X = 1299 * 32767 / (SCREEN_WIDTH  - 1) ~= 31182
-             *   Y =  352 * 32767 / (SCREEN_HEIGHT - 1) ~= 15037
-             */
-            if (send_mouse_report(0x00, SIGNOUT_HID_X, SIGNOUT_HID_Y)) {
-                delay_ms(80);
-                show_status("Clicking Sign out", NULL);
-                g_state = STATE_CLICK;
-            }
-            break;
-
-        case STATE_CLICK:
-            /* Press left button. */
-            if (send_mouse_report(HID_BTN_LEFT, SIGNOUT_HID_X, SIGNOUT_HID_Y)) {
-                delay_ms(80);
-                g_state = STATE_RELEASE_CLICK;
-            }
-            break;
-
-        case STATE_RELEASE_CLICK:
-            /* Release left button. */
-            if (send_mouse_report(0x00, SIGNOUT_HID_X, SIGNOUT_HID_Y)) {
-                show_status("Sequence sent", "Exiting...");
-                delay_ms(150);
-                g_state = STATE_DONE;
-            }
-            break;
-
-        case STATE_DONE:
-            break;
-        }
+        delay_ms(1500);
     }
 
 cleanup:

@@ -18,7 +18,9 @@ sign out of a Chromebook.
      screen coordinates **(1299, 352)** — identified from the reference
      screenshot (`image.png`, 1366 × 768 px).
    - Clicks the left mouse button to trigger the sign-out action, then exits.
-4. Press **\[CLEAR\]** on the calculator at any time before completion to abort.
+4. If USB never finishes configuring, the program times out after roughly
+   **12 seconds** and displays an error.
+5. Press **\[CLEAR\]** on the calculator at any time before completion to abort.
 
 ## Reference Image
 
@@ -63,7 +65,7 @@ CEDEV="$PWD/.cedev" PATH="$PWD/.cedev/bin:$PATH" make
 
 The output is `bin/CBSGNOUT.8xp`.
 
-A prebuilt `CBSGNOUT.8xp` (built with CEdev v14.2) is in the repository
+A prebuilt `CBSGNOUT.8xp` (built with CEdev v14.1) is in the repository
 root if you only need the compiled program.
 
 ### Transfer to Calculator

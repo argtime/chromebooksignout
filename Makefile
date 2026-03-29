@@ -8,7 +8,7 @@
 #   make         — Build the calculator program (.8xp)
 #   make clean   — Remove all generated files
 #
-# The output file (CBSIGNOUT.8xp) can be transferred to the TI 84+ CE
+# The output file (CBSGNOUT.8xp) can be transferred to the TI 84+ CE
 # using TI Connect™ CE or TILP, then run from the Apps/Programs menu.
 # =============================================================================
 

@@ -50,19 +50,22 @@ These coordinates are mapped to the HID absolute mouse logical range
 make
 ```
 
-The output is `bin/CBSIGNOUT.8xp`.
+The output is `bin/CBSGNOUT.8xp`.
+
+A prebuilt `CBSGNOUT.8xp` (built with CEdev v14.2) is in the repository
+root if you only need the compiled program.
 
 ### Transfer to Calculator
 
-Use **TI Connect™ CE** or **TILP** to send `CBSIGNOUT.8xp` to the
-TI 84+ CE.  The program appears under **[PRGM]** → **CBSIGNOUT**.
+Use **TI Connect™ CE** or **TILP** to send `CBSGNOUT.8xp` to the
+TI 84+ CE.  The program appears under **[PRGM]** → **CBSGNOUT**.
 
 ## Usage
 
 1. Connect the TI 84+ CE to the Chromebook USB port with a USB cable
    (USB-A host on the Chromebook side, mini-USB on the calculator side).
 2. Unlock the Chromebook if it is on the lock screen.
-3. Run `CBSIGNOUT` on the calculator (`[PRGM]` → select → `[ENTER]`).
+3. Run `CBSGNOUT` on the calculator (`[PRGM]` → select → `[ENTER]`).
 4. Press **\[ENTER\]** when prompted ("Press ENTER to start").
    - ChromeOS will recognise the new HID device within a second or two.
 5. Once "USB connected!" is displayed, press **\[ENTER\]** again to
